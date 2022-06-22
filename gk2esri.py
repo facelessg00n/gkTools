@@ -34,9 +34,18 @@ delta = cocoa - unix
 # -------- Details ------------------------------------------------------------------
 __description__ = """ Extracts Apple location data from GrayKey extract """
 __author__ = "facelessg00n"
-__version__ = "0.1 - initial"
+__version__ = "0.2"
 
 
+# -------- Changes ------------------------------------------------------------------
+
+"""
+0.2 Close connection to database correctly
+    Process and export visits
+
+0.1 Initial Release
+
+"""
 # --------Functions live here--------------------------------------------------------
 
 
@@ -95,9 +104,12 @@ def processlocalCache(localCacheIN):
     with zipfile.ZipFile(localCacheIN) as file:
         file.extract(localCache, targetPath)
         inputFile = glob.glob("./**/com.apple.routined/Local.sqlite", recursive=True)
-        print("Using " + str(inputFile[0]) + " as the input file")
+        print("Using " + str(inputFile[0]) + " as the input file for Local Cache")
         print("Conneting to database")
         con = sqlite3.connect(inputFile[0])
+
+        print("Closing database connection to Local Cache.")
+        con.close()
         # Cleanup temp folder
         shutil.rmtree(targetPath)
 
@@ -110,7 +122,7 @@ def processRoutinedCache(routinedIN):
     with zipfile.ZipFile(routinedIN) as file:
         file.extract(routinedCache, targetPath)
         inputFile = glob.glob("./**/com.apple.routined/Cache.sqlite", recursive=True)
-        print("Using" + str(inputFile[0]) + " as the input file")
+        print("Using" + str(inputFile[0]) + " as the input file for Cache.")
         print("Conneting to database")
         con = sqlite3.connect(inputFile[0])
 
@@ -139,6 +151,20 @@ def processRoutinedCache(routinedIN):
             print("ERROR : Table ZRTCLLOCATIONMO not located, skipping")
             pass
 
+        print("Processing Learned Locations")
+
+        try:
+            learnedLocations = pd.read_sql_query(
+                "SELECT * from ZRTLEARNEDLOCATIONOFINTERESTMO", con
+            )
+            learnedLocations["dateTime"] = (
+                pd.to_datetime(learnedLocations["ZPLACECREATIONDATE"], unit="s") + delta
+            )
+
+        except sqlite3.OperationalError:
+            print("ERROR : Table ZRTCLLOCATIONMO not located, skipping")
+            pass
+
         # TODO : Extract Visits data
         # -------Extract data from visits table-----------------------------------------
 
@@ -156,6 +182,7 @@ def processRoutinedCache(routinedIN):
             },
             inplace=True,
         )
+        print(str(len(routineDVisitsPD.index)) + " datapoints located.")
 
         if debug:
             print(routineDVisitsPD.head())
@@ -163,13 +190,18 @@ def processRoutinedCache(routinedIN):
         # TODO : Extract Vehicle data
 
         # ------------Close connection to database-------------------------------------
-        print("Closing database connection.")
+        print("Closing database connection to routineD.")
         con.close()
 
         # -------Export reports--------------------------------------------------------
         print("Exporting CSV files")
         routineDTrack.to_csv(
             "trackLog.csv", index=False, date_format="%Y/%m/%d %H:%M:%S"
+        )
+
+        print("Exporting Location Visits")
+        routineDVisitsPD.to_csv(
+            "Visits.csv", index=False, date_format="%Y/%m/%d %H:%M:%S"
         )
 
         # Export to KML
@@ -182,8 +214,9 @@ def processRoutinedCache(routinedIN):
             routineDTrack["LONGITUDE"],
         ):
             kml.newpoint(name=pointName, description=pointTime, coords=[(lon, lat)])
-        kml.save("routined.kml")
+        kml.save("tracklog.kml")
         # Cleanup temp folder
+
         shutil.rmtree(targetPath)
 
 
@@ -192,7 +225,7 @@ def processRoutinedCache(routinedIN):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=__description__,
-        epilog="Developed by {}".format(str(__author__), str(__version__)),
+        epilog="Developed by {}, version {}".format(str(__author__), str(__version__)),
     )
 
     parser.add_argument(
