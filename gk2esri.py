@@ -210,8 +210,8 @@ def processRoutinedCache(routinedIN):
         for pointName, pointTime, lon, lat in zip(
             routineDTrack["Z_PK"],
             routineDTrack["dateTime"],
-            routineDTrack["LATITUDE"],
             routineDTrack["LONGITUDE"],
+            routineDTrack["LATITUDE"],
         ):
             kml.newpoint(name=pointName, description=pointTime, coords=[(lon, lat)])
         kml.save("tracklog.kml")
